@@ -36,10 +36,16 @@ export const signup = async (req: Request, res: Response) => {
 export const login = async (req: Request, res: Response) => {
 
     const {email, password} = req.body;
-    const isUser = await User.findOne({email}) as { password: string } | null;
+    const isUser = await User.findOne({email}) as {_id : string, password: string } | null;
     if(!isUser) return res.status(404).json({message : "user not found"})
     const chkPass = await bcrypt.compare(password, isUser.password)
     if(!chkPass) return res.status(401).json({message : "password is wrong"})
+    const token = jwt.sign({userId : isUser._id}, access_token_secret, {expiresIn : '1d'})
+    res.cookie("token", token, {
+        httpOnly : true,
+        secure : false,
+        sameSite : "lax"
+    })
     return res.status(200).json({message : "user loggedIn"})
 
 }
