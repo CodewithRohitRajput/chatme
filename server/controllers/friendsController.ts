@@ -6,8 +6,8 @@ import { Types } from "mongoose";
 // all users
 export const allUsers = async (req : Request, res : Response) => {
     const response = await User.find({_id : {$ne : req.userId}}).select('username _id') 
-    const data = await res.json(response);
-    return res.status(200).json({data})
+    // const data = await res.json(response);
+    return res.status(200).json(response)
 }
 // send request
 export const sendRequest = async (req  : Request, res : Response) => {
