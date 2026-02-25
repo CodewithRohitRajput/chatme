@@ -1,16 +1,19 @@
 'use client'
 
 import { useEffect, useState, useRef } from "react"
-
-// @ts-ignore
 import io from 'socket.io-client'
+import Cookies from "js-cookie"
+import {jwtDecode} from "jwt-decode";
 
 interface User { _id: string; username: string }
 interface Friend { _id: string; username: string }
 interface Pending { _id?: string; from?: { _id?: string; username?: string } }
 interface Message { id?: string; text: string; senderId: string; receiverId: string; timestamp?: Date }
+interface Profile {_id : string, username : string, email : string}
 
 const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
@@ -20,6 +23,7 @@ const CSS = `
   --bg-hover: #2a3942;
   --green-primary: #00a884;
   --green-hover: #06cf9c;
+  --green-glow: rgba(0, 168, 132, 0.15);
   --text-primary: #e9edef;
   --text-secondary: #8696a0;
   --text-muted: #667781;
@@ -30,7 +34,7 @@ const CSS = `
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
   height: 100vh;
@@ -45,7 +49,7 @@ body {
 
 /* ── SIDEBAR ── */
 .sidebar {
-  width: 420px;
+  width: 400px;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   display: flex;
@@ -55,17 +59,48 @@ body {
 
 .sidebar-header {
   background: var(--bg-tertiary);
-  padding: 10px 16px;
+  padding: 14px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border);
+  min-height: 64px;
 }
 
-.sidebar-title {
-  font-size: 16px;
-  font-weight: 500;
+.user-greeting {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.greeting-line {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.username-line {
+  font-size: 17px;
+  font-weight: 600;
   color: var(--text-primary);
+  letter-spacing: -0.2px;
+}
+
+.header-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--green-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: white;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(0,168,132,0.3);
 }
 
 .sidebar-tabs {
@@ -73,19 +108,22 @@ body {
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
   padding: 0 8px;
+  gap: 4px;
 }
 
 .tab {
   flex: 1;
-  padding: 12px 16px;
+  padding: 12px 8px;
   background: transparent;
   border: none;
-  color: var(--text-secondary);
-  font-size: 14px;
+  color: var(--text-muted);
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: all 0.2s;
+  font-family: 'DM Sans', sans-serif;
+  letter-spacing: 0.3px;
 }
 
 .tab.active {
@@ -94,41 +132,50 @@ body {
 }
 
 .tab:hover {
-  background: var(--bg-hover);
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.03);
 }
 
 .search-container {
-  padding: 8px 12px;
+  padding: 10px 12px;
   background: var(--bg-secondary);
-}
-
-.search-box {
-  width: 100%;
-  background: var(--input-bg);
-  border: none;
-  border-radius: 8px;
-  padding: 9px 16px 9px 40px;
-  color: var(--text-primary);
-  font-size: 14px;
-  outline: none;
-}
-
-.search-box::placeholder {
-  color: var(--text-muted);
+  border-bottom: 1px solid rgba(49,61,69,0.5);
 }
 
 .search-wrapper {
   position: relative;
 }
 
+.search-box {
+  width: 100%;
+  background: var(--input-bg);
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px 10px 42px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  font-family: 'DM Sans', sans-serif;
+  transition: box-shadow 0.2s;
+}
+
+.search-box:focus {
+  box-shadow: 0 0 0 1px var(--green-primary);
+}
+
+.search-box::placeholder {
+  color: var(--text-muted);
+}
+
 .search-icon {
   position: absolute;
-  left: 16px;
+  left: 14px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-muted);
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
+  pointer-events: none;
 }
 
 .chat-list {
@@ -137,113 +184,93 @@ body {
   background: var(--bg-secondary);
 }
 
-.chat-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.chat-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.chat-list::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
+.chat-list::-webkit-scrollbar { width: 4px; }
+.chat-list::-webkit-scrollbar-track { background: transparent; }
+.chat-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 .chat-item {
   display: flex;
   align-items: center;
-  padding: 12px 16px;
+  padding: 13px 16px;
   cursor: pointer;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(49,61,69,0.6);
   transition: background 0.15s;
-  gap: 12px;
+  gap: 13px;
 }
 
-.chat-item:hover {
-  background: var(--bg-hover);
-}
-
-.chat-item.active {
-  background: var(--bg-hover);
-}
+.chat-item:hover { background: rgba(42,57,66,0.6); }
+.chat-item.active { background: var(--bg-hover); }
 
 .avatar {
-  width: 49px;
-  height: 49px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: var(--green-primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 600;
   color: white;
   flex-shrink: 0;
 }
 
-.chat-info {
-  flex: 1;
-  min-width: 0;
-}
+.chat-info { flex: 1; min-width: 0; }
 
 .chat-name {
-  font-size: 17px;
-  font-weight: 400;
+  font-size: 15.5px;
+  font-weight: 500;
   color: var(--text-primary);
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .chat-preview {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.chat-status {
+.user-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(49,61,69,0.6);
+  gap: 13px;
+  transition: background 0.15s;
+}
+
+.user-item:hover { background: rgba(42,57,66,0.4); }
+
+.user-info { flex: 1; min-width: 0; }
+
+.user-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.user-sub {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 2px;
 }
 
-.user-item {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  gap: 12px;
-}
-
-.user-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.user-name {
-  font-size: 17px;
-  font-weight: 400;
-  color: var(--text-primary);
-  margin-bottom: 4px;
-}
-
-.user-action {
-  display: flex;
-  gap: 8px;
-}
+.user-action { display: flex; gap: 8px; align-items: center; }
 
 .btn-small {
-  padding: 6px 12px;
+  padding: 7px 14px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
+  font-family: 'DM Sans', sans-serif;
 }
 
 .btn-add {
@@ -253,28 +280,26 @@ body {
 
 .btn-add:hover {
   background: var(--green-hover);
+  box-shadow: 0 2px 8px rgba(0,168,132,0.3);
 }
 
 .btn-accept {
   background: var(--green-primary);
   color: white;
-  padding: 6px 16px;
 }
 
 .btn-accept:hover {
   background: var(--green-hover);
+  box-shadow: 0 2px 8px rgba(0,168,132,0.3);
 }
 
 .btn-decline {
   background: transparent;
   color: var(--text-secondary);
   border: 1px solid var(--border);
-  padding: 6px 16px;
 }
 
-.btn-decline:hover {
-  background: var(--bg-hover);
-}
+.btn-decline:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 .empty-state {
   padding: 60px 20px;
@@ -282,10 +307,15 @@ body {
   color: var(--text-muted);
 }
 
-.empty-text {
-  font-size: 14px;
-  margin-top: 12px;
+.empty-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 12px;
+  opacity: 0.3;
 }
+
+.empty-text { font-size: 14px; }
+.empty-sub { font-size: 12px; margin-top: 4px; color: var(--text-muted); opacity: 0.7; }
 
 /* ── CHAT AREA ── */
 .chat-area {
@@ -298,122 +328,136 @@ body {
 
 .chat-header {
   background: var(--bg-tertiary);
-  padding: 12px 20px;
+  padding: 0 20px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   border-bottom: 1px solid var(--border);
+  min-height: 64px;
 }
 
-.chat-header-info {
-  flex: 1;
-}
+.chat-header-info { flex: 1; }
 
 .chat-header-name {
   font-size: 16px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 2px;
 }
 
 .chat-header-status {
-  font-size: 13px;
-  color: var(--text-secondary);
+  font-size: 12.5px;
+  color: var(--green-primary);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green-primary);
+  box-shadow: 0 0 4px var(--green-primary);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.02'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  gap: 2px;
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.015'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
 }
 
-.chat-messages::-webkit-scrollbar {
-  width: 6px;
-}
-
-.chat-messages::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.chat-messages::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-track { background: transparent; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 .message {
   display: flex;
-  margin-bottom: 2px;
-  animation: fadeIn 0.2s;
+  margin-bottom: 1px;
+  animation: fadeIn 0.2s ease;
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.message.sent {
-  justify-content: flex-end;
-}
-
-.message.received {
-  justify-content: flex-start;
-}
+.message.sent { justify-content: flex-end; }
+.message.received { justify-content: flex-start; }
 
 .message-bubble {
-  max-width: 65%;
-  padding: 6px 12px 8px;
-  border-radius: 7.5px;
+  max-width: 62%;
+  padding: 8px 12px 6px;
+  border-radius: 10px;
   word-wrap: break-word;
   position: relative;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
 .message.sent .message-bubble {
   background: var(--sent-msg);
   color: var(--text-primary);
-  border-bottom-right-radius: 2px;
+  border-bottom-right-radius: 3px;
 }
 
 .message.received .message-bubble {
   background: var(--received-msg);
   color: var(--text-primary);
-  border-bottom-left-radius: 2px;
+  border-bottom-left-radius: 3px;
 }
 
 .message-text {
   font-size: 14.2px;
-  line-height: 19px;
-  margin-bottom: 2px;
+  line-height: 20px;
+  margin-bottom: 3px;
+}
+
+.message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
 }
 
 .message-time {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--text-secondary);
-  text-align: right;
-  margin-top: 2px;
-  opacity: 0.8;
+  opacity: 0.7;
 }
 
-.message.received .message-time {
-  text-align: left;
-}
+.message.received .message-meta { justify-content: flex-start; }
 
+/* ── INPUT AREA ── */
 .chat-input-container {
   background: var(--bg-tertiary);
-  padding: 8px 12px;
+  padding: 10px 16px;
   border-top: 1px solid var(--border);
 }
 
 .chat-input-wrapper {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 10px;
   background: var(--input-bg);
-  border-radius: 24px;
-  padding: 9px 12px;
+  border-radius: 14px;
+  padding: 8px 8px 8px 16px;
+  transition: box-shadow 0.2s;
+  border: 1px solid transparent;
+}
+
+.chat-input-wrapper:focus-within {
+  border-color: rgba(0,168,132,0.3);
+  box-shadow: 0 0 0 3px rgba(0,168,132,0.07);
 }
 
 .chat-input {
@@ -424,18 +468,19 @@ body {
   font-size: 15px;
   outline: none;
   resize: none;
-  max-height: 100px;
-  font-family: inherit;
-  line-height: 20px;
+  max-height: 120px;
+  min-height: 24px;
+  font-family: 'DM Sans', sans-serif;
+  line-height: 22px;
+  padding: 1px 0;
+  align-self: center;
 }
 
-.chat-input::placeholder {
-  color: var(--text-muted);
-}
+.chat-input::placeholder { color: var(--text-muted); }
 
 .send-btn {
-  width: 32px;
-  height: 32px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   background: var(--green-primary);
   border: none;
@@ -445,23 +490,29 @@ body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0,168,132,0.25);
 }
 
-.send-btn:hover {
+.send-btn:hover:not(:disabled) {
   background: var(--green-hover);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0,168,132,0.4);
+}
+
+.send-btn:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .send-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.3;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
-.send-icon {
-  width: 18px;
-  height: 18px;
-}
+.send-icon { width: 17px; height: 17px; }
 
+/* ── NO CHAT STATE ── */
 .no-chat {
   flex: 1;
   display: flex;
@@ -469,58 +520,69 @@ body {
   justify-content: center;
   flex-direction: column;
   color: var(--text-muted);
+  gap: 16px;
+}
+
+.no-chat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 48px;
+  background: rgba(32,44,51,0.5);
+  border: 1px solid var(--border);
+  border-radius: 20px;
 }
 
 .no-chat-icon {
-  width: 120px;
-  height: 120px;
-  opacity: 0.3;
-  margin-bottom: 24px;
+  width: 64px;
+  height: 64px;
+  opacity: 0.2;
 }
 
-.no-chat-text {
-  font-size: 14px;
+.no-chat-title {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: -0.2px;
 }
 
+.no-chat-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ── TOAST ── */
 .toast {
   position: fixed;
-  bottom: 24px;
+  bottom: 28px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
   color: var(--text-primary);
-  padding: 12px 20px;
-  border-radius: 8px;
-  font-size: 14px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  padding: 11px 22px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
   z-index: 1000;
-  animation: toastSlide 0.3s;
+  animation: toastSlide 0.25s ease;
+  letter-spacing: 0.1px;
 }
 
 @keyframes toastSlide {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
+  from { opacity: 0; transform: translateX(-50%) translateY(16px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 `
 
-function getUserIdFromCookie(): string | null {
-  if (typeof document === 'undefined') return null
-  const cookies = document.cookie.split(';')
-  const tokenCookie = cookies.find(c => c.trim().startsWith('token='))
-  if (!tokenCookie) return null
-  const token = tokenCookie.split('=')[1]
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    return payload.userId || null
-  } catch {
-    return null
-  }
+function getGreeting() {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
 }
 
 export default function Dashboard() {
@@ -536,24 +598,27 @@ export default function Dashboard() {
   const [showToast, setShowToast] = useState(false)
   const [socket, setSocket] = useState<any>(null)
   const [userId, setUserId] = useState<string | null>(null)
-  
+  const [userProfile, setUserProfile] = useState<Profile | null>(null)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  interface TokenPayload { userId: string }
 
   useEffect(() => {
-    const id = getUserIdFromCookie()
+    const token = Cookies.get("token")
+    const id = token ? jwtDecode<TokenPayload>(token).userId : null
     setUserId(id)
-    
+
     if (id) {
       const sock = io('http://localhost:8000', {
         transports: ['websocket'],
         withCredentials: true
       })
-      
-      sock.on('connect', () => {
-        sock.emit('join', id)
-      })
-      
+
+      sock.on('connect', () => { sock.emit('join', id) })
+
       sock.on('receiveMsg', (text: string) => {
         const newMsg: Message = {
           text,
@@ -563,29 +628,32 @@ export default function Dashboard() {
         }
         setMessages(prev => [...prev, newMsg])
       })
-      
+
       setSocket(sock)
-      
-      return () => {
-        sock.disconnect()
-      }
+      return () => { sock.disconnect() }
     }
   }, [])
 
   useEffect(() => {
-  
-      fetch('http://localhost:8000/friends/', { credentials: 'include' })
-        .then(r => r.json()).then(setUsers).catch(() => {})
-      fetch('http://localhost:8000/friends/requests/incoming', { credentials: 'include' })
-        .then(r => r.json()).then(setPending).catch(() => {})
-      fetch('http://localhost:8000/friends/allFriends', { credentials: 'include' })
-        .then(r => r.json()).then(setFriends).catch(() => {})
-    
+    fetch('http://localhost:8000/friends/', { credentials: 'include' })
+      .then(r => r.json()).then(setUsers).catch(() => {})
+    fetch('http://localhost:8000/friends/requests/incoming', { credentials: 'include' })
+      .then(r => r.json()).then(setPending).catch(() => {})
+    fetch('http://localhost:8000/friends/allFriends', { credentials: 'include' })
+      .then(r => r.json()).then(setFriends).catch(() => {})
   }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px'
+    }
+  }, [messageText])
 
   const showToastMsg = (msg: string) => {
     setToast(msg)
@@ -597,12 +665,11 @@ export default function Dashboard() {
   const sendRequest = async (id: string) => {
     try {
       const r = await fetch(`http://localhost:8000/friends/request/${id}`, {
-        method: 'POST',
-        credentials: 'include'
+        method: 'POST', credentials: 'include'
       })
       const d = await r.json()
       showToastMsg(d.message || 'Request sent')
-    } catch (e) {
+    } catch {
       showToastMsg('Failed to send request')
     }
   }
@@ -622,13 +689,10 @@ export default function Dashboard() {
       if (status === 'Accepted') {
         const matched = pending.find(p => p._id === reqId)
         if (matched?.from) {
-          setFriends(prev => [...prev, {
-            _id: matched.from!._id || '',
-            username: matched.from!.username || ''
-          }])
+          setFriends(prev => [...prev, { _id: matched.from!._id || '', username: matched.from!.username || '' }])
         }
       }
-    } catch (e) {
+    } catch {
       showToastMsg('Failed to process request')
     }
   }
@@ -640,21 +704,14 @@ export default function Dashboard() {
 
   const sendMessage = () => {
     if (!messageText.trim() || !activeChat || !socket || !userId) return
-    
     const newMsg: Message = {
       text: messageText,
       senderId: userId,
       receiverId: activeChat,
       timestamp: new Date()
     }
-    
     setMessages(prev => [...prev, newMsg])
-    socket.emit('sendMessage', {
-      receiverId: activeChat,
-      senderId: userId,
-      text: messageText
-    })
-    
+    socket.emit('sendMessage', { receiverId: activeChat, senderId: userId, text: messageText })
     setMessageText('')
   }
 
@@ -665,45 +722,62 @@ export default function Dashboard() {
     }
   }
 
-  const filteredUsers = users.filter(u =>
-    u.username.toLowerCase().includes(search.toLowerCase())
-  )
-
-  const filteredFriends = friends.filter(f =>
-    f.username.toLowerCase().includes(search.toLowerCase())
-  )
-
+  const filteredUsers = users.filter(u => u.username.toLowerCase().includes(search.toLowerCase()))
+  const filteredFriends = friends.filter(f => f.username.toLowerCase().includes(search.toLowerCase()))
   const activeFriend = friends.find(f => f._id === activeChat)
+
+  useEffect(() => {
+    const getProfile = async () => {
+      const res = await fetch(`http://localhost:8000/users/me`, { method: 'GET', credentials: 'include' })
+      const data = await res.json()
+      setUserProfile(data)
+    }
+    getProfile()
+  }, [])
+
+  const displayName = userProfile?.username || 'User'
 
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
       <div className="app-container">
+
         {/* ── SIDEBAR ── */}
         <div className="sidebar">
           <div className="sidebar-header">
-            <div className="sidebar-title">ChatMe</div>
+            <div className="user-greeting">
+              <span className="greeting-line">{getGreeting()}</span>
+              <span className="username-line">{displayName} 👋</span>
+            </div>
+            <div
+              className="header-avatar"
+              style={{ background: `hsl(${displayName.charCodeAt(0) * 137.5 % 360}, 65%, 45%)` }}
+            >
+              {displayName.charAt(0).toUpperCase()}
+            </div>
           </div>
 
           <div className="sidebar-tabs">
-            <button
-              className={`tab ${activeTab === 'chats' ? 'active' : ''}`}
-              onClick={() => setActiveTab('chats')}
-            >
-              Chats
-            </button>
-            <button
-              className={`tab ${activeTab === 'requests' ? 'active' : ''}`}
-              onClick={() => setActiveTab('requests')}
-            >
-              Requests
-            </button>
-            <button
-              className={`tab ${activeTab === 'discover' ? 'active' : ''}`}
-              onClick={() => setActiveTab('discover')}
-            >
-              Discover
-            </button>
+            {(['chats', 'requests', 'discover'] as const).map(tab => (
+              <button
+                key={tab}
+                className={`tab ${activeTab === tab ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab)}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab === 'requests' && pending.length > 0 && (
+                  <span style={{
+                    marginLeft: 6,
+                    background: 'var(--green-primary)',
+                    color: 'white',
+                    borderRadius: 10,
+                    padding: '1px 6px',
+                    fontSize: 11,
+                    fontWeight: 600
+                  }}>{pending.length}</span>
+                )}
+              </button>
+            ))}
           </div>
 
           <div className="search-container">
@@ -714,7 +788,7 @@ export default function Dashboard() {
               </svg>
               <input
                 className="search-box"
-                placeholder="Search or start new chat"
+                placeholder="Search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -723,94 +797,83 @@ export default function Dashboard() {
 
           <div className="chat-list">
             {activeTab === 'chats' && (
-              <>
-                {filteredFriends.length === 0 ? (
-                  <div className="empty-state">
-                    <div className="empty-text">No chats yet</div>
-                    <div className="empty-text" style={{ fontSize: '13px', marginTop: '4px' }}>
-                      Start a conversation from Discover
+              filteredFriends.length === 0 ? (
+                <div className="empty-state">
+                  <svg className="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  <div className="empty-text">No chats yet</div>
+                  <div className="empty-sub">Discover people to start chatting</div>
+                </div>
+              ) : (
+                filteredFriends.map((f) => (
+                  <div
+                    key={f._id}
+                    className={`chat-item ${activeChat === f._id ? 'active' : ''}`}
+                    onClick={() => openChat(f._id)}
+                  >
+                    <div className="avatar" style={{ background: `hsl(${f._id.charCodeAt(0) * 137.5 % 360}, 65%, 45%)` }}>
+                      {f.username.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="chat-info">
+                      <div className="chat-name">{f.username}</div>
+                      <div className="chat-preview">Tap to chat</div>
                     </div>
                   </div>
-                ) : (
-                  filteredFriends.map((f) => (
-                    <div
-                      key={f._id}
-                      className={`chat-item ${activeChat === f._id ? 'active' : ''}`}
-                      onClick={() => openChat(f._id)}
-                    >
-                      <div className="avatar" style={{ background: `hsl(${f._id.charCodeAt(0) * 137.5 % 360}, 70%, 50%)` }}>
-                        {f.username.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="chat-info">
-                        <div className="chat-name">{f.username}</div>
-                        <div className="chat-status">Tap to open chat</div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </>
+                ))
+              )
             )}
 
             {activeTab === 'requests' && (
-              <>
-                {pending.length === 0 ? (
-                  <div className="empty-state">
-                    <div className="empty-text">No pending requests</div>
-                  </div>
-                ) : (
-                  pending.map((p) => (
-                    <div key={p._id} className="user-item">
-                      <div className="avatar" style={{ background: `hsl(${(p.from?.username || '?').charCodeAt(0) * 137.5 % 360}, 70%, 50%)` }}>
-                        {(p.from?.username || '?').charAt(0).toUpperCase()}
-                      </div>
-                      <div className="user-info">
-                        <div className="user-name">{p.from?.username || 'Unknown'}</div>
-                      </div>
-                      <div className="user-action">
-                        <button
-                          className="btn-small btn-accept"
-                          onClick={() => handleRequest(p._id, 'Accepted')}
-                        >
-                          Accept
-                        </button>
-                        <button
-                          className="btn-small btn-decline"
-                          onClick={() => handleRequest(p._id, 'Rejected')}
-                        >
-                          Decline
-                        </button>
-                      </div>
+              pending.length === 0 ? (
+                <div className="empty-state">
+                  <svg className="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                  <div className="empty-text">No pending requests</div>
+                </div>
+              ) : (
+                pending.map((p) => (
+                  <div key={p._id} className="user-item">
+                    <div className="avatar" style={{ background: `hsl(${(p.from?.username || '?').charCodeAt(0) * 137.5 % 360}, 65%, 45%)` }}>
+                      {(p.from?.username || '?').charAt(0).toUpperCase()}
                     </div>
-                  ))
-                )}
-              </>
+                    <div className="user-info">
+                      <div className="user-name">{p.from?.username || 'Unknown'}</div>
+                      <div className="user-sub">Wants to connect</div>
+                    </div>
+                    <div className="user-action">
+                      <button className="btn-small btn-accept" onClick={() => handleRequest(p._id, 'Accepted')}>Accept</button>
+                      <button className="btn-small btn-decline" onClick={() => handleRequest(p._id, 'Rejected')}>Decline</button>
+                    </div>
+                  </div>
+                ))
+              )
             )}
 
             {activeTab === 'discover' && (
-              <>
-                {filteredUsers.length === 0 ? (
-                  <div className="empty-state">
-                    <div className="empty-text">No users found</div>
-                  </div>
-                ) : (
-                  filteredUsers.map((u) => (
-                    <div key={u._id} className="user-item">
-                      <div className="avatar" style={{ background: `hsl(${u._id.charCodeAt(0) * 137.5 % 360}, 70%, 50%)` }}>
-                        {u.username.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="user-info">
-                        <div className="user-name">{u.username}</div>
-                      </div>
-                      <button
-                        className="btn-small btn-add"
-                        onClick={() => sendRequest(u._id)}
-                      >
-                        Add
-                      </button>
+              filteredUsers.length === 0 ? (
+                <div className="empty-state">
+                  <svg className="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+                  </svg>
+                  <div className="empty-text">No users found</div>
+                </div>
+              ) : (
+                filteredUsers.map((u) => (
+                  <div key={u._id} className="user-item">
+                    <div className="avatar" style={{ background: `hsl(${u._id.charCodeAt(0) * 137.5 % 360}, 65%, 45%)` }}>
+                      {u.username.charAt(0).toUpperCase()}
                     </div>
-                  ))
-                )}
-              </>
+                    <div className="user-info">
+                      <div className="user-name">{u.username}</div>
+                      <div className="user-sub">ChatMe user</div>
+                    </div>
+                    <button className="btn-small btn-add" onClick={() => sendRequest(u._id)}>Add</button>
+                  </div>
+                ))
+              )
             )}
           </div>
         </div>
@@ -820,29 +883,29 @@ export default function Dashboard() {
           {activeChat && activeFriend ? (
             <>
               <div className="chat-header">
-                <div className="avatar" style={{ background: `hsl(${activeFriend._id.charCodeAt(0) * 137.5 % 360}, 70%, 50%)` }}>
+                <div className="avatar" style={{ background: `hsl(${activeFriend._id.charCodeAt(0) * 137.5 % 360}, 65%, 45%)` }}>
                   {activeFriend.username.charAt(0).toUpperCase()}
                 </div>
                 <div className="chat-header-info">
                   <div className="chat-header-name">{activeFriend.username}</div>
-                  <div className="chat-header-status">online</div>
+                  <div className="chat-header-status">
+                    <span className="status-dot" />
+                    online
+                  </div>
                 </div>
               </div>
 
               <div className="chat-messages">
                 {messages.map((msg, idx) => (
-                  <div
-                    key={idx}
-                    className={`message ${msg.senderId === userId ? 'sent' : 'received'}`}
-                  >
+                  <div key={idx} className={`message ${msg.senderId === userId ? 'sent' : 'received'}`}>
                     <div className="message-bubble">
                       <div className="message-text">{msg.text}</div>
-                      <div className="message-time">
-                        {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('en-US', {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          hour12: true
-                        }).toLowerCase() : 'now'}
+                      <div className="message-meta">
+                        <span className="message-time">
+                          {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('en-US', {
+                            hour: 'numeric', minute: '2-digit', hour12: true
+                          }).toLowerCase() : 'now'}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -853,6 +916,7 @@ export default function Dashboard() {
               <div className="chat-input-container">
                 <div className="chat-input-wrapper">
                   <textarea
+                    ref={textareaRef}
                     className="chat-input"
                     placeholder="Type a message"
                     value={messageText}
@@ -865,9 +929,8 @@ export default function Dashboard() {
                     onClick={sendMessage}
                     disabled={!messageText.trim()}
                   >
-                    <svg className="send-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <line x1="22" y1="2" x2="11" y2="13"/>
-                      <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                    <svg className="send-icon" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.405Z" />
                     </svg>
                   </button>
                 </div>
@@ -875,18 +938,19 @@ export default function Dashboard() {
             </>
           ) : (
             <div className="no-chat">
-              <svg className="no-chat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-              </svg>
-              <div className="no-chat-text">Select a chat to start messaging</div>
+              <div className="no-chat-card">
+                <svg className="no-chat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                <div className="no-chat-title">Your messages</div>
+                <div className="no-chat-sub">Select a conversation to start chatting</div>
+              </div>
             </div>
           )}
         </div>
       </div>
 
-      {showToast && (
-        <div className="toast">{toast}</div>
-      )}
+      {showToast && <div className="toast">{toast}</div>}
     </>
   )
 }

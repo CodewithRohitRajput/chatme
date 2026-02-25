@@ -3,6 +3,7 @@ import type { Request, Response } from 'express'
 import dotenv from 'dotenv'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
+import { Types } from 'mongoose'
 dotenv.config()
 
 const access_token_secret = process.env.ACCESS_TOKEN_SECRET
@@ -24,7 +25,7 @@ export const signup = async (req: Request, res: Response) => {
         {expiresIn : "1d"}
     );
     res.cookie("token", token, {
-        httpOnly : true,
+        httpOnly : false,
         secure : false,
         sameSite : "lax",
 
@@ -42,10 +43,21 @@ export const login = async (req: Request, res: Response) => {
     if(!chkPass) return res.status(401).json({message : "password is wrong"})
     const token = jwt.sign({userId : isUser._id}, access_token_secret, {expiresIn : '1d'})
     res.cookie("token", token, {
-        httpOnly : true,
+        httpOnly : false,
         secure : false,
         sameSite : "lax"
     })
     return res.status(200).json({message : "user loggedIn"})
 
+}
+
+
+export const userProfile = async (req : Request , res : Response)=> {
+    const userId = req.userId
+    if (!userId) return res.status(401).json({ message: "Authentication required" })
+
+    const user = await User.findById(userId)
+    if (!user) return res.status(404).json({ message: "User not found" })
+
+    return res.status(200).json(user)
 }

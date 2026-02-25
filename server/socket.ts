@@ -13,7 +13,7 @@ const setupSocket = (server: HttpServer) => {
 
         socket.on('sendMessage', async ({ receiverId, senderId, text }) => {
             io.to(receiverId).emit('receiveMsg', text);
-            io.to(senderId).emit('receiveMsg', text);
+            // io.to(senderId).emit('receiveMsg', text);
         });
 
         socket.on('disconnect', () => {
