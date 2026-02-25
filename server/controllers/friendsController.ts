@@ -17,13 +17,14 @@ export const sendRequest = async (req  : Request, res : Response) => {
         {from : new Types.ObjectId(req.userId) , to : id }
     )
     const username = await User.findOne({_id : id}).select('username')
-    return res.status(201).json({message : `Friend Request is sent to ${username}`})
+    const uname = username?.username || 'unknown'
+    return res.status(201).json({message : `Friend Request is sent to ${uname}`})
 }
 
 // pending request 
 export const incomingRequest = async (req : Request, res : Response) => {
     const userId = req.userId;
-    const reqToMe = await friendReq.find({to : new Types.ObjectId(req.userId), status : 'Pending'}).populate('from', 'username')
+    const reqToMe = await friendReq.find({to : new Types.ObjectId(userId), status : 'Pending'}).populate('from', 'username')
     return res.status(201).json(reqToMe)
 }
 
