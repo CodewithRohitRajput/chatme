@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react"
 import io from 'socket.io-client'
 import Cookies from "js-cookie"
 import {jwtDecode} from "jwt-decode";
+import { useRouter } from "next/navigation";
 
 interface User { _id: string; username: string }
 interface Friend { _id: string; username: string }
@@ -101,6 +102,29 @@ body {
   color: white;
   flex-shrink: 0;
   box-shadow: 0 0 0 2px rgba(0,168,132,0.3);
+}
+
+.header-settings-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, color 0.2s;
+  flex-shrink: 0;
+}
+.header-settings-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.header-settings-btn svg {
+  width: 22px;
+  height: 22px;
 }
 
 .sidebar-tabs {
@@ -586,6 +610,7 @@ function getGreeting() {
 }
 
 export default function Dashboard() {
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<'chats' | 'requests' | 'discover'>('chats')
   const [users, setUsers] = useState<User[]>([])
   const [pending, setPending] = useState<Pending[]>([])
@@ -749,12 +774,24 @@ export default function Dashboard() {
               <span className="greeting-line">{getGreeting()}</span>
               <span className="username-line">{displayName} 👋</span>
             </div>
-            <div
+            {/* <div
               className="header-avatar"
               style={{ background: `hsl(${displayName.charCodeAt(0) * 137.5 % 360}, 65%, 45%)` }}
             >
               {displayName.charAt(0).toUpperCase()}
-            </div>
+            </div> */}
+
+            <button
+              className="header-settings-btn"
+              onClick={() => router.push('/settings')}
+              title="Settings"
+              aria-label="Settings"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </button>
           </div>
 
           <div className="sidebar-tabs">
