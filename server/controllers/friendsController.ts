@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import User from "../models/user.js";
 import friendReq from "../models/request.js";
 import { Types } from "mongoose";
+import user from "../models/user.js";
 
 // all users
 export const allUsers = async (req : Request, res : Response) => {
@@ -55,3 +56,11 @@ export const frndList = async (req : Request, res : Response) => {
     return res.status(200).json(user.friends)
 }
 
+export const removeFriend = async (req : Request, res : Response) => {
+    const{friendId} = req.body;
+    const user = await User.findByIdAndUpdate(req.userId, {$pull : {friends : friendId}});
+    if(!user) return res.status(404).json({message : "User not found"});
+    const anotherUser = await User.findByIdAndUpdate(friendId, {$pull : {friends : req.userId}})
+    if(!anotherUser) return res.status(404).json({message : "User not found"});
+    return res.status(200).json({message : `${anotherUser.username} is not a friend anymore`})
+}

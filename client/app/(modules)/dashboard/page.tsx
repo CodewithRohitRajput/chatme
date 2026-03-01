@@ -241,6 +241,95 @@ body {
 
 .chat-info { flex: 1; min-width: 0; }
 
+.chat-item-delete-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s;
+}
+.chat-item-delete-btn:hover {
+  background: rgba(239,83,80,0.2);
+  color: #ef5350;
+}
+.chat-item-delete-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ── CONFIRM REMOVE MODAL ── */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  padding: 20px;
+}
+.confirm-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 340px;
+  width: 100%;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+}
+.confirm-modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+.confirm-modal-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+  line-height: 1.45;
+}
+.confirm-modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+.confirm-modal-btn {
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  font-family: 'DM Sans', sans-serif;
+  transition: background 0.2s, color 0.2s;
+}
+.confirm-modal-btn-cancel {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+.confirm-modal-btn-cancel:hover {
+  background: var(--bg-hover);
+}
+.confirm-modal-btn-delete {
+  background: #d32f2f;
+  color: white;
+}
+.confirm-modal-btn-delete:hover {
+  background: #b71c1c;
+}
+.confirm-modal-btn-delete:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .chat-name {
   font-size: 15.5px;
   font-weight: 500;
@@ -624,6 +713,8 @@ export default function Dashboard() {
   const [socket, setSocket] = useState<any>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [userProfile, setUserProfile] = useState<Profile | null>(null)
+  const [removeConfirmFriend, setRemoveConfirmFriend] = useState<Friend | null>(null)
+  const [removingFriendId, setRemovingFriendId] = useState<string | null>(null)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -762,9 +853,62 @@ export default function Dashboard() {
 
   const displayName = userProfile?.username || 'User'
 
+  const handleRemoveFrnd = async (friendId: string) => {
+    setRemovingFriendId(friendId)
+    try {
+      const res = await fetch(`http://localhost:8000/friends/remove`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ friendId }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setFriends((prev) => prev.filter((f) => f._id !== friendId))
+        if (activeChat === friendId) setActiveChat(null)
+        setRemoveConfirmFriend(null)
+        showToastMsg(data.message || 'Friend removed successfully')
+      } else {
+        showToastMsg(data.message || 'Failed to remove friend')
+      }
+    } catch {
+      showToastMsg('Failed to remove friend')
+    } finally {
+      setRemovingFriendId(null)
+    }
+  }
+
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
+      {removeConfirmFriend && (
+        <div className="confirm-overlay" onClick={() => !removingFriendId && setRemoveConfirmFriend(null)}>
+          <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-modal-title">Remove friend</div>
+            <div className="confirm-modal-text">
+              Do you want to remove <strong>{removeConfirmFriend.username}</strong> from your friends?
+            </div>
+            <div className="confirm-modal-actions">
+              <button
+                type="button"
+                className="confirm-modal-btn confirm-modal-btn-cancel"
+                onClick={() => setRemoveConfirmFriend(null)}
+                disabled={!!removingFriendId}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="confirm-modal-btn confirm-modal-btn-delete"
+                onClick={() => handleRemoveFrnd(removeConfirmFriend._id)}
+                disabled={!!removingFriendId}
+              >
+                {removingFriendId === removeConfirmFriend._id ? 'Removing…' : 'Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="app-container">
 
         {/* ── SIDEBAR ── */}
@@ -856,6 +1000,19 @@ export default function Dashboard() {
                       <div className="chat-name">{f.username}</div>
                       <div className="chat-preview">Tap to chat</div>
                     </div>
+                    <button
+                      type="button"
+                      className="chat-item-delete-btn"
+                      onClick={(e) => { e.stopPropagation(); setRemoveConfirmFriend(f) }}
+                      title="Remove friend"
+                      aria-label="Remove friend"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        <line x1="10" y1="11" x2="10" y2="17" />
+                        <line x1="14" y1="11" x2="14" y2="17" />
+                      </svg>
+                    </button>
                   </div>
                 ))
               )
