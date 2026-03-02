@@ -3,21 +3,33 @@ import { Server } from "socket.io";
 
 const setupSocket = (server: HttpServer) => {
     const io = new Server(server);
+    const onlineUsers = new Set<string>();
 
     io.on('connection', (socket) => {
-        console.log('user connection', socket.id);
+        const userId = socket.handshake.auth?.userId as string | undefined;
+        if (!userId) {
+            socket.disconnect(true);
+            return;
+        }
 
-        socket.on('join', (userId) => {
-            socket.join(userId);
+        onlineUsers.forEach((id) => {
+            socket.emit('presence', { userId: id, status: 'online' });
+        });
+
+        onlineUsers.add(userId);
+        io.emit('presence', { userId, status: 'online' });
+
+        socket.on('join', (roomUserId) => {
+            if (roomUserId) socket.join(roomUserId);
         });
 
         socket.on('sendMessage', async ({ receiverId, senderId, text }) => {
             io.to(receiverId).emit('receiveMsg', text);
-            // io.to(senderId).emit('receiveMsg', text);
         });
 
         socket.on('disconnect', () => {
-            console.log('user disconnected');
+            onlineUsers.delete(userId);
+            io.emit('presence', { userId, status: 'offline' });
         });
     });
 };

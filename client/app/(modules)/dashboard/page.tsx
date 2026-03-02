@@ -11,6 +11,8 @@ interface Friend { _id: string; username: string }
 interface Pending { _id?: string; from?: { _id?: string; username?: string } }
 interface Message { id?: string; text: string; senderId: string; receiverId: string; timestamp?: Date }
 interface Profile {_id : string, username : string, email : string}
+type Presence = 'online' | 'offline'
+interface TokenPayload { userId: string }
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -237,6 +239,33 @@ body {
   font-weight: 600;
   color: white;
   flex-shrink: 0;
+}
+
+.avatar-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.presence-indicator {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-secondary);
+  background: var(--text-muted);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.25);
+}
+
+.presence-indicator.online {
+  background: var(--green-primary);
+  box-shadow: 0 0 0 1px rgba(0,168,132,0.35);
+}
+
+.presence-indicator.offline {
+  background: var(--text-muted);
+  opacity: 0.7;
 }
 
 .chat-info { flex: 1; min-width: 0; }
@@ -473,6 +502,17 @@ body {
   background: var(--green-primary);
   box-shadow: 0 0 4px var(--green-primary);
   animation: pulse 2s infinite;
+}
+
+.chat-header-status.offline {
+  color: var(--text-muted);
+}
+
+.status-dot.offline {
+  background: var(--text-muted);
+  box-shadow: none;
+  animation: none;
+  opacity: 0.7;
 }
 
 @keyframes pulse {
@@ -715,12 +755,22 @@ export default function Dashboard() {
   const [userProfile, setUserProfile] = useState<Profile | null>(null)
   const [removeConfirmFriend, setRemoveConfirmFriend] = useState<Friend | null>(null)
   const [removingFriendId, setRemovingFriendId] = useState<string | null>(null)
+  const [userStatuses, setUserStatuses] = useState<Record<string, Presence>>({})
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  interface TokenPayload { userId: string }
+  useEffect(() => {
+    if (!socket) return
+
+    const handlePresence = (payload: { userId: string; status: Presence }) => {
+      setUserStatuses(prev => ({ ...prev, [payload.userId]: payload.status }))
+    }
+
+    socket.on('presence', handlePresence)
+    return () => socket.off('presence', handlePresence)
+  }, [socket])
 
   useEffect(() => {
     const token = Cookies.get("token")
@@ -730,7 +780,8 @@ export default function Dashboard() {
     if (id) {
       const sock = io('http://localhost:8000', {
         transports: ['websocket'],
-        withCredentials: true
+        withCredentials: true,
+        auth: { userId: id }
       })
 
       sock.on('connect', () => { sock.emit('join', id) })
@@ -841,6 +892,7 @@ export default function Dashboard() {
   const filteredUsers = users.filter(u => u.username.toLowerCase().includes(search.toLowerCase()))
   const filteredFriends = friends.filter(f => f.username.toLowerCase().includes(search.toLowerCase()))
   const activeFriend = friends.find(f => f._id === activeChat)
+  const activeFriendStatus: Presence = activeFriend ? (userStatuses[activeFriend._id] || 'offline') : 'offline'
 
   useEffect(() => {
     const getProfile = async () => {
@@ -987,34 +1039,41 @@ export default function Dashboard() {
                   <div className="empty-sub">Discover people to start chatting</div>
                 </div>
               ) : (
-                filteredFriends.map((f) => (
-                  <div
-                    key={f._id}
-                    className={`chat-item ${activeChat === f._id ? 'active' : ''}`}
-                    onClick={() => openChat(f._id)}
-                  >
-                    <div className="avatar" style={{ background: `hsl(${f._id.charCodeAt(0) * 137.5 % 360}, 65%, 45%)` }}>
-                      {f.username.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="chat-info">
-                      <div className="chat-name">{f.username}</div>
-                      <div className="chat-preview">Tap to chat</div>
-                    </div>
-                    <button
-                      type="button"
-                      className="chat-item-delete-btn"
-                      onClick={(e) => { e.stopPropagation(); setRemoveConfirmFriend(f) }}
-                      title="Remove friend"
-                      aria-label="Remove friend"
+                filteredFriends.map((f) => {
+                  const status: Presence = userStatuses[f._id] || 'offline'
+
+                  return (
+                    <div
+                      key={f._id}
+                      className={`chat-item ${activeChat === f._id ? 'active' : ''}`}
+                      onClick={() => openChat(f._id)}
                     >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                        <line x1="10" y1="11" x2="10" y2="17" />
-                        <line x1="14" y1="11" x2="14" y2="17" />
-                      </svg>
-                    </button>
-                  </div>
-                ))
+                      <div className="avatar-wrap">
+                        <div className="avatar" style={{ background: `hsl(${f._id.charCodeAt(0) * 137.5 % 360}, 65%, 45%)` }}>
+                          {f.username.charAt(0).toUpperCase()}
+                        </div>
+                        <span className={`presence-indicator ${status}`} aria-label={status} />
+                      </div>
+                      <div className="chat-info">
+                        <div className="chat-name">{f.username}</div>
+                        <div className="chat-preview">{status === 'online' ? 'Online now' : 'Offline'}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="chat-item-delete-btn"
+                        onClick={(e) => { e.stopPropagation(); setRemoveConfirmFriend(f) }}
+                        title="Remove friend"
+                        aria-label="Remove friend"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          <line x1="10" y1="11" x2="10" y2="17" />
+                          <line x1="14" y1="11" x2="14" y2="17" />
+                        </svg>
+                      </button>
+                    </div>
+                  )
+                })
               )
             )}
 
@@ -1082,9 +1141,9 @@ export default function Dashboard() {
                 </div>
                 <div className="chat-header-info">
                   <div className="chat-header-name">{activeFriend.username}</div>
-                  <div className="chat-header-status">
-                    <span className="status-dot" />
-                    online
+                  <div className={`chat-header-status ${activeFriendStatus}`}>
+                    <span className={`status-dot ${activeFriendStatus}`} />
+                    {activeFriendStatus}
                   </div>
                 </div>
               </div>
